@@ -1,0 +1,409 @@
+import SwiftUI
+
+@main
+struct BrowserProfileRouterApp: App {
+    var body: some Scene {
+        WindowGroup {
+            RouterView()
+        }
+    }
+}
+
+@MainActor
+final class RouterViewModel: ObservableObject {
+    @Published var urlText = ""
+    @Published private(set) var targets: [BrowserTarget] = []
+    @Published private(set) var matchedRule: RoutingRule?
+    @Published private(set) var rules: [RoutingRule] = []
+    @Published var selectedTargetID: UUID?
+    @Published var errorMessage: String?
+
+    private let store: TargetStore
+
+    init() {
+        store = try! TargetStore.defaultStore()
+        targets = (try? store.load()) ?? []
+        rules = (try? store.loadRules()) ?? []
+        selectedTargetID = targets.first?.id
+    }
+
+    var selectedTarget: BrowserTarget? {
+        targets.first { $0.id == selectedTargetID }
+    }
+
+    var commandPreview: String? {
+        guard let selectedTarget else { return nil }
+        guard let command = try? LaunchCommandBuilder.build(target: selectedTarget, urlText: urlText) else { return nil }
+        return ([command.executable] + command.arguments).map(shellQuoted).joined(separator: " ")
+    }
+
+    func add(_ target: BrowserTarget) {
+        targets.append(target)
+        selectedTargetID = target.id
+        persist()
+    }
+
+    func replace(_ target: BrowserTarget) {
+        guard let index = targets.firstIndex(where: { $0.id == target.id }) else { return }
+        let previousTarget = targets[index]
+        targets[index] = target
+        rules = RoutingRule.retargeting(rules, from: previousTarget.name, to: target.name)
+        persist()
+    }
+
+    func delete(at offsets: IndexSet) {
+        let targetNames = offsets.map { targets[$0].name }
+        targets.remove(atOffsets: offsets)
+        rules = RoutingRule.removing(rules, forTargetNames: targetNames)
+        if selectedTarget == nil { selectedTargetID = targets.first?.id }
+        persist()
+    }
+
+    func rules(for target: BrowserTarget) -> [RoutingRule] {
+        rules.filter { $0.targetName == target.name }
+    }
+
+    func add(_ rule: RoutingRule) {
+        rules.append(rule)
+        persist()
+    }
+
+    func replace(_ rule: RoutingRule, replacing previousRule: RoutingRule) {
+        guard let index = rules.firstIndex(of: previousRule) else { return }
+        rules[index] = rule
+        persist()
+    }
+
+    func delete(_ rule: RoutingRule) {
+        guard let index = rules.firstIndex(of: rule) else { return }
+        rules.remove(at: index)
+        persist()
+    }
+
+    func launch() {
+        guard let selectedTarget else {
+            errorMessage = "Choose a browser target first."
+            return
+        }
+        do {
+            let command = try LaunchCommandBuilder.build(target: selectedTarget, urlText: urlText)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: command.executable)
+            process.arguments = command.arguments
+            try process.run()
+        } catch {
+            errorMessage = "The URL or target configuration is invalid: \(error.localizedDescription)"
+        }
+    }
+
+    func applyMatchingRule() {
+        guard let rule = RoutingRuleMatcher.match(urlText: urlText, rules: rules),
+              let target = RouteResolver.target(urlText: urlText, targets: targets, rules: rules) else {
+            matchedRule = nil
+            return
+        }
+        matchedRule = rule
+        selectedTargetID = target.id
+    }
+
+    func openIncomingURL(_ url: URL) {
+        urlText = url.absoluteString
+        applyMatchingRule()
+        if let target = RouteResolver.targetForIncomingURL(
+            urlText: urlText,
+            targets: targets,
+            rules: rules,
+            selectedTargetID: selectedTargetID
+        ) {
+            selectedTargetID = target.id
+        }
+        launch()
+    }
+
+    private func persist() {
+        do {
+            try store.save(targets: targets, rules: rules)
+        } catch {
+            errorMessage = "Could not save targets: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct RouterView: View {
+    @StateObject private var model = RouterViewModel()
+    @State private var isPresentingEditor = false
+    @State private var editingTarget: BrowserTarget?
+    @State private var isPresentingRuleEditor = false
+    @State private var editingRule: RoutingRule?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Browser Profile Router").font(.title2)
+            Text("Paste a URL, then choose where to open it. This app does not register as your default browser.")
+                .foregroundStyle(.secondary)
+            TextField("https://example.com", text: $model.urlText)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: model.urlText) { _, _ in
+                    model.applyMatchingRule()
+                }
+            Picker("Browser target", selection: $model.selectedTargetID) {
+                Text("Choose a target").tag(UUID?.none)
+                ForEach(model.targets) { target in
+                    Text(target.name).tag(Optional(target.id))
+                }
+            }
+            if let matchedRule = model.matchedRule {
+                Text("Rule matched: \(matchedRule.displayPattern) → \(matchedRule.targetName)")
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Button("Add Target") {
+                    editingTarget = nil
+                    isPresentingEditor = true
+                }
+                Button("Edit Target") {
+                    editingTarget = model.selectedTarget
+                    isPresentingEditor = true
+                }
+                .disabled(model.selectedTarget == nil)
+                Button("Delete Target", role: .destructive) {
+                    guard let selectedTargetID = model.selectedTargetID,
+                          let index = model.targets.firstIndex(where: { $0.id == selectedTargetID }) else { return }
+                    model.delete(at: IndexSet(integer: index))
+                }
+                .disabled(model.selectedTarget == nil)
+                Button("Open URL with Selected Profile") { model.launch() }
+                    .disabled(model.commandPreview == nil)
+                Button("Add Rule for This URL") {
+                    editingRule = nil
+                    isPresentingRuleEditor = true
+                }
+                .disabled(model.selectedTarget == nil || RuleDraft(urlText: model.urlText, targetName: model.selectedTarget?.name ?? "") == nil)
+            }
+            GroupBox("Launch preview") {
+                Text(model.commandPreview ?? "Enter a valid http(s) URL and choose a target.")
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading) {
+                    Text("Profiles").font(.headline)
+                    List(selection: $model.selectedTargetID) {
+                        ForEach(model.targets) { target in
+                            VStack(alignment: .leading) {
+                                Text(target.name)
+                                Text(targetDescription(target)).foregroundStyle(.secondary)
+                            }
+                            .tag(Optional(target.id))
+                        }
+                        .onDelete(perform: model.delete)
+                    }
+                    .frame(minWidth: 220, minHeight: 180)
+                }
+                VStack(alignment: .leading) {
+                    Text(model.selectedTarget.map { "Rules for \($0.name)" } ?? "Rules")
+                        .font(.headline)
+                    if let target = model.selectedTarget {
+                        List {
+                            ForEach(model.rules(for: target)) { rule in
+                                HStack {
+                                    Text(rule.displayPattern)
+                                    Spacer()
+                                    Button("Edit") {
+                                        editingRule = rule
+                                        isPresentingRuleEditor = true
+                                    }
+                                    Button("Delete", role: .destructive) {
+                                        model.delete(rule)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(minWidth: 300, minHeight: 180)
+                    } else {
+                        Text("Choose a profile to manage its rules.").foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 560, minHeight: 420)
+        .alert("Browser Profile Router", isPresented: Binding(
+            get: { model.errorMessage != nil },
+            set: { if !$0 { model.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+        .sheet(isPresented: $isPresentingEditor) {
+            TargetEditor(target: editingTarget) { target in
+                if editingTarget == nil {
+                    model.add(target)
+                } else {
+                    model.replace(target)
+                }
+                isPresentingEditor = false
+            }
+        }
+        .sheet(isPresented: $isPresentingRuleEditor) {
+            if let target = model.selectedTarget {
+                RuleEditor(
+                    rule: editingRule,
+                    targetName: target.name,
+                    suggestedURL: model.urlText
+                ) { rule in
+                    if let editingRule {
+                        model.replace(rule, replacing: editingRule)
+                    } else {
+                        model.add(rule)
+                    }
+                    isPresentingRuleEditor = false
+                }
+            }
+        }
+        .onOpenURL { url in
+            model.openIncomingURL(url)
+        }
+    }
+}
+
+private struct RuleEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: RuleDraft
+    @State private var errorMessage: String?
+    private let existingRule: RoutingRule?
+    let onSave: (RoutingRule) -> Void
+
+    init(rule: RoutingRule?, targetName: String, suggestedURL: String, onSave: @escaping (RoutingRule) -> Void) {
+        existingRule = rule
+        self.onSave = onSave
+        _draft = State(initialValue: rule.map { RuleDraft(rule: $0, targetName: targetName) }
+            ?? RuleDraft(urlText: suggestedURL, targetName: targetName)
+            ?? RuleDraft(targetName: targetName))
+    }
+
+    var body: some View {
+        Form {
+            Text("Profile: \(draft.targetName)").foregroundStyle(.secondary)
+            TextField("Host", text: $draft.host)
+            Toggle("Use a path prefix", isOn: $draft.usesPathPrefix)
+            if draft.usesPathPrefix {
+                TextField("Path prefix (for example: /maps)", text: $draft.pathPrefix)
+            }
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+            HStack {
+                Button("Cancel") { dismiss() }
+                Button(existingRule == nil ? "Add Rule" : "Save Rule") {
+                    do {
+                        onSave(try draft.buildRule())
+                    } catch {
+                        errorMessage = "Enter a valid host and, if used, a path prefix beginning with /."
+                    }
+                }
+                .disabled(!draft.isValid)
+            }
+        }
+        .padding()
+        .frame(width: 460)
+    }
+}
+
+private struct TargetEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: TargetDraft
+    @State private var errorMessage: String?
+    @State private var chromeProfiles: [ChromeProfile] = []
+    private let existingTarget: BrowserTarget?
+    let onSave: (BrowserTarget) -> Void
+
+    init(target: BrowserTarget?, onSave: @escaping (BrowserTarget) -> Void) {
+        existingTarget = target
+        self.onSave = onSave
+        _draft = State(initialValue: target.map(TargetDraft.init(target:)) ?? TargetDraft())
+    }
+
+    var body: some View {
+        Form {
+            TextField("Name", text: $draft.name)
+            Picker("Application", selection: $draft.applicationName) {
+                Text("Choose an app").tag("")
+                if !draft.applicationName.isEmpty && !BrowserApplicationCatalog.names.contains(draft.applicationName) {
+                    Text(draft.applicationName).tag(draft.applicationName)
+                }
+                ForEach(BrowserApplicationCatalog.names, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            Toggle("Use a Chrome profile", isOn: $draft.usesChromeProfile)
+            if draft.usesChromeProfile {
+                if chromeProfiles.isEmpty {
+                    TextField("Chrome profile directory (for example: Profile 2)", text: $draft.profileDirectory)
+                    Text("No Chrome profiles were found; enter the directory from chrome://version.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Picker("Chrome profile", selection: $draft.profileDirectory) {
+                        Text("Choose a Chrome profile").tag("")
+                        ForEach(chromeProfiles) { profile in
+                            Text("\(profile.displayName) (\(profile.directory))").tag(profile.directory)
+                        }
+                    }
+                }
+            }
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+            HStack {
+                Button("Cancel") { dismiss() }
+                Button("Save") {
+                    do {
+                        onSave(try draft.buildTarget(id: existingTarget?.id ?? UUID()))
+                    } catch {
+                        errorMessage = "Complete the name, application, and Chrome profile fields."
+                    }
+                }
+                .disabled(!draft.isValid)
+            }
+        }
+        .padding()
+        .frame(width: 460)
+        .onAppear {
+            chromeProfiles = ChromeProfileCatalog.profiles()
+            prefillNameFromSelectedChromeProfile()
+        }
+        .onChange(of: draft.usesChromeProfile) { _, usesChromeProfile in
+            if usesChromeProfile {
+                draft.applicationName = "Google Chrome"
+            }
+        }
+        .onChange(of: draft.profileDirectory) { _, _ in
+            prefillNameFromSelectedChromeProfile()
+        }
+    }
+
+    private func prefillNameFromSelectedChromeProfile() {
+        guard let profile = chromeProfiles.first(where: { $0.directory == draft.profileDirectory }) else { return }
+        draft.prefillNameIfEmpty(with: profile.displayName)
+    }
+}
+
+private enum BrowserApplicationCatalog {
+    static let names = ["Google Chrome", "Safari", "Firefox", "Microsoft Edge", "Arc"]
+        .filter { FileManager.default.fileExists(atPath: "/Applications/\($0).app") }
+}
+
+private func targetDescription(_ target: BrowserTarget) -> String {
+    switch target.kind {
+    case .generic:
+        return "Generic: \(target.applicationName)"
+    case .chrome(let profileDirectory):
+        return "Chrome profile: \(profileDirectory)"
+    }
+}
+
+private func shellQuoted(_ value: String) -> String {
+    "'\(value.replacingOccurrences(of: "'", with: "'\\\"'\\\"'"))'"
+}
