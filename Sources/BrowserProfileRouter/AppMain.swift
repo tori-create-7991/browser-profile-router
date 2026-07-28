@@ -109,14 +109,7 @@ final class RouterViewModel: ObservableObject {
     func openIncomingURL(_ url: URL) {
         urlText = url.absoluteString
         applyMatchingRule()
-        if let target = RouteResolver.targetForIncomingURL(
-            urlText: urlText,
-            targets: targets,
-            rules: rules,
-            selectedTargetID: selectedTargetID
-        ) {
-            selectedTargetID = target.id
-        }
+        guard matchedRule != nil else { return }
         launch()
     }
 
@@ -139,6 +132,17 @@ private struct RouterView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Browser Profile Router").font(.title2)
+            ForEach(model.targets.filter { $0.shortcutNumber != nil }) { target in
+                Button("Open \(target.name)") {
+                    model.selectedTargetID = target.id
+                    model.launch()
+                }
+                .keyboardShortcut(
+                    KeyEquivalent(Character(String(target.shortcutNumber!))),
+                    modifiers: [.command, .option]
+                )
+                .hidden()
+            }
             Text("Paste a URL, then choose where to open it. This app does not register as your default browser.")
                 .foregroundStyle(.secondary)
             TextField("https://example.com", text: $model.urlText)
@@ -339,6 +343,12 @@ private struct TargetEditor: View {
                 }
             }
             Toggle("Use a Chrome profile", isOn: $draft.usesChromeProfile)
+            Picker("Shortcut", selection: $draft.shortcutNumber) {
+                Text("None").tag(Int?.none)
+                ForEach(1...9, id: \.self) { number in
+                    Text("⌘⌥\(number)").tag(Optional(number))
+                }
+            }
             if draft.usesChromeProfile {
                 if chromeProfiles.isEmpty {
                     TextField("Chrome profile directory (for example: Profile 2)", text: $draft.profileDirectory)

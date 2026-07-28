@@ -265,8 +265,8 @@ final class LaunchCommandBuilderTests: XCTestCase {
         )
     }
 
-    // Unit: An incoming URL without a rule keeps the user's active profile instead of requiring a dialog.
-    func testRouteResolverUsesSelectedTargetWhenIncomingURLHasNoRule() {
+    // Unit: An incoming URL without a rule remains in the router for manual profile selection.
+    func testRouteResolverDoesNotChooseSelectedTargetWhenIncomingURLHasNoRule() {
         let work = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
         let personal = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
 
@@ -277,8 +277,26 @@ final class LaunchCommandBuilderTests: XCTestCase {
                 rules: [],
                 selectedTargetID: work.id
             ),
-            work
+            nil
         )
+    }
+
+    // Unit: A profile can persist one app-local Command-Option number shortcut.
+    func testTargetStoreRoundTripsProfileShortcutNumber() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let target = BrowserTarget(
+            name: "Work",
+            applicationName: "Google Chrome",
+            kind: .chrome(profileDirectory: "Profile 2"),
+            shortcutNumber: 3
+        )
+        let store = try TargetStore(directory: directory)
+
+        try store.save([target])
+
+        XCTAssertEqual(try store.load(), [target])
     }
 
     // Unit: Saving a current URL as a rule starts safely at the host, with the path available as an opt-in refinement.

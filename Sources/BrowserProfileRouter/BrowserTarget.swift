@@ -10,12 +10,14 @@ struct BrowserTarget: Codable, Equatable, Identifiable {
     var name: String
     var applicationName: String
     var kind: Kind
+    var shortcutNumber: Int?
 
-    init(id: UUID = UUID(), name: String, applicationName: String, kind: Kind) {
+    init(id: UUID = UUID(), name: String, applicationName: String, kind: Kind, shortcutNumber: Int? = nil) {
         self.id = id
         self.name = name
         self.applicationName = applicationName
         self.kind = kind
+        self.shortcutNumber = shortcutNumber
     }
 }
 
@@ -40,17 +42,20 @@ struct TargetDraft {
     var applicationName: String = ""
     var usesChromeProfile: Bool = false
     var profileDirectory: String = ""
+    var shortcutNumber: Int?
 
     init(
         name: String = "",
         applicationName: String = "",
         usesChromeProfile: Bool = false,
-        profileDirectory: String = ""
+        profileDirectory: String = "",
+        shortcutNumber: Int? = nil
     ) {
         self.name = name
         self.applicationName = applicationName
         self.usesChromeProfile = usesChromeProfile
         self.profileDirectory = profileDirectory
+        self.shortcutNumber = shortcutNumber
     }
 
     init(target: BrowserTarget) {
@@ -64,6 +69,7 @@ struct TargetDraft {
             usesChromeProfile = true
             profileDirectory = directory
         }
+        shortcutNumber = target.shortcutNumber
     }
 
     var isValid: Bool {
@@ -90,10 +96,11 @@ struct TargetDraft {
                 id: id,
                 name: trimmedName,
                 applicationName: trimmedApplicationName,
-                kind: .chrome(profileDirectory: trimmedProfileDirectory)
+                kind: .chrome(profileDirectory: trimmedProfileDirectory),
+                shortcutNumber: shortcutNumber
             )
         }
-        return BrowserTarget(id: id, name: trimmedName, applicationName: trimmedApplicationName, kind: .generic)
+        return BrowserTarget(id: id, name: trimmedName, applicationName: trimmedApplicationName, kind: .generic, shortcutNumber: shortcutNumber)
     }
 }
 
