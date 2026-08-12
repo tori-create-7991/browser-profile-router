@@ -166,19 +166,19 @@ final class LaunchCommandBuilderTests: XCTestCase {
 
     // Unit: A host rule selects its named browser target, including subdomains.
     func testRoutingRuleMatcherSelectsTargetForMatchingHost() {
-        let rules = [RoutingRule(host: "chat.google.com", targetName: "Work")]
+        let rules = [RoutingRule(host: "team.example.com", targetName: "Work")]
 
         XCTAssertEqual(
-            RoutingRuleMatcher.match(urlText: "https://mail.chat.google.com/messages", rules: rules),
+            RoutingRuleMatcher.match(urlText: "https://mail.team.example.com/messages", rules: rules),
             rules.first
         )
     }
 
     // Unit: A host rule does not match an unrelated host with a similar suffix.
     func testRoutingRuleMatcherRejectsUnrelatedHost() {
-        let rules = [RoutingRule(host: "chat.google.com", targetName: "Work")]
+        let rules = [RoutingRule(host: "team.example.com", targetName: "Work")]
 
-        XCTAssertNil(RoutingRuleMatcher.match(urlText: "https://notchat.google.com", rules: rules))
+        XCTAssertNil(RoutingRuleMatcher.match(urlText: "https://notteam.example.com", rules: rules))
     }
 
     // Unit: A more specific path rule overrides a matching host-only fallback.
@@ -240,7 +240,7 @@ final class LaunchCommandBuilderTests: XCTestCase {
         version: 1
         targets: []
         rules:
-          - host: chat.google.com
+          - host: team.example.com
             pathPrefix: /messages
             target: Work
         """.write(to: directory.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
@@ -250,7 +250,7 @@ final class LaunchCommandBuilderTests: XCTestCase {
 
         XCTAssertEqual(
             try store.loadRules(),
-            [RoutingRule(host: "chat.google.com", pathPrefix: "/messages", targetName: "Work")]
+            [RoutingRule(host: "team.example.com", pathPrefix: "/messages", targetName: "Work")]
         )
     }
 
@@ -260,7 +260,7 @@ final class LaunchCommandBuilderTests: XCTestCase {
         let personal = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
 
         XCTAssertEqual(
-            RouteResolver.target(urlText: "https://chat.google.com/", targets: [personal, work], rules: [RoutingRule(host: "chat.google.com", targetName: "Work")]),
+            RouteResolver.target(urlText: "https://team.example.com/", targets: [personal, work], rules: [RoutingRule(host: "team.example.com", targetName: "Work")]),
             work
         )
     }
@@ -281,6 +281,31 @@ final class LaunchCommandBuilderTests: XCTestCase {
         )
     }
 
+    // Unit: Keyboard profile navigation follows the displayed order and stays at each boundary.
+    func testProfileSelectionMovesInDisplayedOrderAndClampsAtBoundaries() {
+        let personal = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
+        let work = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
+        let finance = BrowserTarget(name: "Finance", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 6"))
+        let targets = [personal, work, finance]
+
+        XCTAssertEqual(
+            ProfileSelection.targetID(currentTargetID: personal.id, targets: targets, direction: .next),
+            work.id
+        )
+        XCTAssertEqual(
+            ProfileSelection.targetID(currentTargetID: finance.id, targets: targets, direction: .next),
+            finance.id
+        )
+        XCTAssertEqual(
+            ProfileSelection.targetID(currentTargetID: personal.id, targets: targets, direction: .previous),
+            personal.id
+        )
+        XCTAssertEqual(
+            ProfileSelection.targetID(currentTargetID: nil, targets: targets, direction: .previous),
+            finance.id
+        )
+    }
+
     // Unit: A profile can persist one app-local Command-Option number shortcut.
     func testTargetStoreRoundTripsProfileShortcutNumber() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -297,6 +322,60 @@ final class LaunchCommandBuilderTests: XCTestCase {
         try store.save([target])
 
         XCTAssertEqual(try store.load(), [target])
+    }
+
+    // Unit: A Chrome target persists its local existing-tab URL prefix without publishing it.
+    func testTargetStoreRoundTripsExistingTabURLPrefix() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let target = BrowserTarget(
+            name: "Work",
+            applicationName: "Google Chrome",
+            kind: .chrome(profileDirectory: "Profile 2"),
+            existingTabURLPrefix: "chrome-extension://example-id/index.html"
+        )
+        let store = try TargetStore(directory: directory)
+
+        try store.save([target])
+
+        XCTAssertEqual(try store.load(), [target])
+    }
+
+    // Unit: Only the controller's bounded success and safe no-op outcomes are accepted.
+    func testChromeTabFocusResultParsesBoundedAppleScriptOutcomes() {
+        XCTAssertEqual(ChromeTabFocusResult.parse("focused\n"), .focused)
+        XCTAssertEqual(ChromeTabFocusResult.parse("notFound\n"), .notFound)
+        XCTAssertEqual(ChromeTabFocusResult.parse("ambiguous\n"), .ambiguous)
+        XCTAssertEqual(ChromeTabFocusResult.parse("unexpected\n"), .automationFailed)
+    }
+
+    // Unit: A shortcut uses an existing Chrome tab only when the target has a local prefix.
+    func testShortcutActionFocusesExistingTabForChromeTargetWithPrefix() {
+        let target = BrowserTarget(
+            name: "Work",
+            applicationName: "Google Chrome",
+            kind: .chrome(profileDirectory: "Profile 2"),
+            existingTabURLPrefix: "chrome-extension://example-id/"
+        )
+
+        XCTAssertEqual(
+            ShortcutAction.forTarget(target),
+            .focusExistingTab(urlPrefix: "chrome-extension://example-id/")
+        )
+    }
+
+    // Unit: Existing-tab focus accepts only URL prefixes Chrome can expose safely.
+    func testTargetDraftRejectsInvalidExistingTabURLPrefix() {
+        let draft = TargetDraft(
+            name: "Work",
+            applicationName: "Google Chrome",
+            usesChromeProfile: true,
+            profileDirectory: "Profile 2",
+            existingTabURLPrefix: "not a URL"
+        )
+
+        XCTAssertThrowsError(try draft.buildTarget())
     }
 
     // Unit: Saving a current URL as a rule starts safely at the host, with the path available as an opt-in refinement.

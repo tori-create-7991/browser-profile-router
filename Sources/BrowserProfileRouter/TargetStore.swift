@@ -118,12 +118,14 @@ final class TargetStore {
             let application: String
             let chromeProfile: String?
             let shortcut: Int?
+            let existingTabURLPrefix: String?
 
             init(_ target: BrowserTarget) {
                 id = target.id
                 name = target.name
                 application = target.applicationName
                 shortcut = target.shortcutNumber
+                existingTabURLPrefix = target.existingTabURLPrefix
                 switch target.kind {
                 case .generic:
                     chromeProfile = nil
@@ -138,7 +140,8 @@ final class TargetStore {
                     name: name,
                     applicationName: application,
                     kind: chromeProfile.map { .chrome(profileDirectory: $0) } ?? .generic,
-                    shortcutNumber: shortcut
+                    shortcutNumber: shortcut,
+                    existingTabURLPrefix: existingTabURLPrefix
                 )
             }
         }

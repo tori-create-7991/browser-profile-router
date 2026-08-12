@@ -1,5 +1,31 @@
 import SwiftUI
 
+enum ProfileSelection {
+    enum Direction {
+        case next
+        case previous
+    }
+
+    static func targetID(
+        currentTargetID: UUID?,
+        targets: [BrowserTarget],
+        direction: Direction
+    ) -> UUID? {
+        guard !targets.isEmpty else { return nil }
+        guard let currentTargetID,
+              let currentIndex = targets.firstIndex(where: { $0.id == currentTargetID }) else {
+            return direction == .next ? targets.first?.id : targets.last?.id
+        }
+
+        switch direction {
+        case .next:
+            return targets[min(currentIndex + 1, targets.count - 1)].id
+        case .previous:
+            return targets[max(currentIndex - 1, 0)].id
+        }
+    }
+}
+
 @main
 struct BrowserProfileRouterApp: App {
     var body: some Scene {
@@ -96,6 +122,33 @@ final class RouterViewModel: ObservableObject {
         }
     }
 
+    func moveSelection(_ direction: ProfileSelection.Direction) {
+        selectedTargetID = ProfileSelection.targetID(
+            currentTargetID: selectedTargetID,
+            targets: targets,
+            direction: direction
+        )
+    }
+
+    func performShortcut(for target: BrowserTarget) {
+        selectedTargetID = target.id
+        switch ShortcutAction.forTarget(target) {
+        case .openCurrentURL:
+            launch()
+        case .focusExistingTab(let urlPrefix):
+            switch ChromeTabController().focusTab(urlPrefix: urlPrefix) {
+            case .focused:
+                break
+            case .notFound:
+                errorMessage = "No open Chrome tab matches this profile's existing-tab URL."
+            case .ambiguous:
+                errorMessage = "More than one open Chrome tab matches this profile's existing-tab URL."
+            case .automationFailed:
+                errorMessage = "Could not focus the Chrome tab. Allow BrowserProfileRouter to control Google Chrome if macOS asks."
+            }
+        }
+    }
+
     func applyMatchingRule() {
         guard let rule = RoutingRuleMatcher.match(urlText: urlText, rules: rules),
               let target = RouteResolver.target(urlText: urlText, targets: targets, rules: rules) else {
@@ -134,8 +187,7 @@ private struct RouterView: View {
             Text("Browser Profile Router").font(.title2)
             ForEach(model.targets.filter { $0.shortcutNumber != nil }) { target in
                 Button("Open \(target.name)") {
-                    model.selectedTargetID = target.id
-                    model.launch()
+                    model.performShortcut(for: target)
                 }
                 .keyboardShortcut(
                     KeyEquivalent(Character(String(target.shortcutNumber!))),
@@ -203,7 +255,23 @@ private struct RouterView: View {
                         }
                         .onDelete(perform: model.delete)
                     }
+                    .onKeyPress(.upArrow) {
+                        model.moveSelection(.previous)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        model.moveSelection(.next)
+                        return .handled
+                    }
+                    .onKeyPress(.return) {
+                        guard model.commandPreview != nil else { return .ignored }
+                        model.launch()
+                        return .handled
+                    }
                     .frame(minWidth: 220, minHeight: 180)
+                    Text("Click this list, then use ↑/↓ to select and Return to open.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 VStack(alignment: .leading) {
                     Text(model.selectedTarget.map { "Rules for \($0.name)" } ?? "Rules")
@@ -362,6 +430,9 @@ private struct TargetEditor: View {
                         }
                     }
                 }
+                TextField("Existing tab URL prefix (optional)", text: $draft.existingTabURLPrefix)
+                Text("With a shortcut, this focuses exactly one matching open Chrome tab without creating a tab.")
+                    .foregroundStyle(.secondary)
             }
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
