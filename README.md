@@ -35,12 +35,12 @@ Add a generic target by selecting an installed browser (for example `Safari`).
 For Chrome, enable **Use a Chrome profile** and select a profile discovered
 read-only from Chrome's local metadata.
 
-## Configuration as code
+## Local configuration
 
 The UI reads and writes `${XDG_CONFIG_HOME:-~/.config}/browser-profile-router/config.yaml`.
-Keep that file in version control (or symlink it from a tracked dotfiles
-repository) to review and share routing targets. A saved Chrome target looks
-like this:
+This file is local to the device: the app does not bundle, commit, upload, or
+sync it. Keep profile names, routing rules, and URLs out of public repositories.
+A saved Chrome target looks like this:
 
 ```yaml
 version: 1
@@ -50,7 +50,7 @@ targets:
     application: Google Chrome
     chromeProfile: Profile 2
 rules:
-  - host: chat.google.com
+  - host: team.example.com
     target: Work
   - host: google.com
     pathPrefix: /maps
@@ -68,6 +68,18 @@ still press **Open URL**.
 segments only: `/maps` matches `/maps` and `/maps/place`, but not
 `/mapsfordays`. When several rules match, the longest `pathPrefix` wins; YAML
 order resolves equal-length ties. A host-only rule is therefore a fallback.
+
+## Existing tab shortcuts
+
+For a Chrome target, set an optional **Existing tab URL prefix** in the target
+editor. When that target also has a `⌘⌥1` through `⌘⌥9` shortcut, the shortcut
+focuses the one already-open Chrome tab whose URL begins with that local value.
+It never creates a tab. No matching tab, or more than one matching tab, leaves
+Chrome unchanged and shows an error. macOS may ask you to allow
+BrowserProfileRouter to control Google Chrome on first use.
+
+Existing-tab URL prefixes are personal local configuration. Do not add them to
+public YAML examples, documentation, issues, or repositories.
 
 ## Verification
 

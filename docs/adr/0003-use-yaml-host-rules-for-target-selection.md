@@ -4,8 +4,8 @@ Status: Partially superseded by 0004 and 0008
 
 ## Context
 
-Selecting a browser target manually for recurring URLs such as
-`chat.google.com` is repetitive. The user wants these routing decisions to be
+Selecting a browser target manually for recurring URLs is repetitive. The user
+wants these routing decisions to be
 reviewable configuration rather than embedded application logic.
 
 ## Decision
