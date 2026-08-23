@@ -265,8 +265,8 @@ final class LaunchCommandBuilderTests: XCTestCase {
         )
     }
 
-    // Unit: An incoming URL without a rule keeps the user's active profile instead of requiring a dialog.
-    func testRouteResolverUsesSelectedTargetWhenIncomingURLHasNoRule() {
+    // Unit: An incoming URL without a rule remains for explicit profile selection.
+    func testRouteResolverDoesNotChooseSelectedTargetWhenIncomingURLHasNoRule() {
         let work = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
         let personal = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
 
@@ -277,8 +277,21 @@ final class LaunchCommandBuilderTests: XCTestCase {
                 rules: [],
                 selectedTargetID: work.id
             ),
-            work
+            nil
         )
+    }
+
+    // Unit: keyboard selection follows the displayed order and stops at each boundary.
+    func testProfileSelectionMovesInDisplayedOrderAndClampsAtBoundaries() {
+        let personal = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
+        let work = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
+        let finance = BrowserTarget(name: "Finance", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 6"))
+        let targets = [personal, work, finance]
+
+        XCTAssertEqual(ProfileSelection.targetID(currentTargetID: personal.id, targets: targets, direction: .next), work.id)
+        XCTAssertEqual(ProfileSelection.targetID(currentTargetID: finance.id, targets: targets, direction: .next), finance.id)
+        XCTAssertEqual(ProfileSelection.targetID(currentTargetID: personal.id, targets: targets, direction: .previous), personal.id)
+        XCTAssertEqual(ProfileSelection.targetID(currentTargetID: nil, targets: targets, direction: .previous), finance.id)
     }
 
     // Unit: Saving a current URL as a rule starts safely at the host, with the path available as an opt-in refinement.

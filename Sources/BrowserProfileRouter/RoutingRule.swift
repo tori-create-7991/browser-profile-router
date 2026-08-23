@@ -149,6 +149,5 @@ enum RouteResolver {
         selectedTargetID: UUID?
     ) -> BrowserTarget? {
         target(urlText: urlText, targets: targets, rules: rules)
-            ?? targets.first { $0.id == selectedTargetID }
     }
 }

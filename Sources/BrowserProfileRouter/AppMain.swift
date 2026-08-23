@@ -1,5 +1,27 @@
 import SwiftUI
 
+enum ProfileSelection {
+    enum Direction {
+        case next
+        case previous
+    }
+
+    static func targetID(currentTargetID: UUID?, targets: [BrowserTarget], direction: Direction) -> UUID? {
+        guard !targets.isEmpty else { return nil }
+        guard let currentTargetID,
+              let currentIndex = targets.firstIndex(where: { $0.id == currentTargetID }) else {
+            return direction == .next ? targets.first?.id : targets.last?.id
+        }
+
+        switch direction {
+        case .next:
+            return targets[min(currentIndex + 1, targets.count - 1)].id
+        case .previous:
+            return targets[max(currentIndex - 1, 0)].id
+        }
+    }
+}
+
 @main
 struct BrowserProfileRouterApp: App {
     var body: some Scene {
@@ -106,18 +128,21 @@ final class RouterViewModel: ObservableObject {
         selectedTargetID = target.id
     }
 
-    func openIncomingURL(_ url: URL) {
+    @discardableResult
+    func openIncomingURL(_ url: URL) -> Bool {
         urlText = url.absoluteString
         applyMatchingRule()
-        if let target = RouteResolver.targetForIncomingURL(
-            urlText: urlText,
-            targets: targets,
-            rules: rules,
-            selectedTargetID: selectedTargetID
-        ) {
-            selectedTargetID = target.id
-        }
+        guard matchedRule != nil else { return true }
         launch()
+        return false
+    }
+
+    func moveSelection(_ direction: ProfileSelection.Direction) {
+        selectedTargetID = ProfileSelection.targetID(
+            currentTargetID: selectedTargetID,
+            targets: targets,
+            direction: direction
+        )
     }
 
     private func persist() {
@@ -131,6 +156,7 @@ final class RouterViewModel: ObservableObject {
 
 private struct RouterView: View {
     @StateObject private var model = RouterViewModel()
+    @FocusState private var isProfileListFocused: Bool
     @State private var isPresentingEditor = false
     @State private var editingTarget: BrowserTarget?
     @State private var isPresentingRuleEditor = false
@@ -199,7 +225,24 @@ private struct RouterView: View {
                         }
                         .onDelete(perform: model.delete)
                     }
+                    .focused($isProfileListFocused)
+                    .onKeyPress(.upArrow) {
+                        model.moveSelection(.previous)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        model.moveSelection(.next)
+                        return .handled
+                    }
+                    .onKeyPress(.return) {
+                        guard model.commandPreview != nil else { return .ignored }
+                        model.launch()
+                        return .handled
+                    }
                     .frame(minWidth: 220, minHeight: 180)
+                    Text("For an unmatched URL, use ↑/↓ to select and Return to open.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 VStack(alignment: .leading) {
                     Text(model.selectedTarget.map { "Rules for \($0.name)" } ?? "Rules")
@@ -264,7 +307,9 @@ private struct RouterView: View {
             }
         }
         .onOpenURL { url in
-            model.openIncomingURL(url)
+            if model.openIncomingURL(url) {
+                isProfileListFocused = true
+            }
         }
     }
 }
