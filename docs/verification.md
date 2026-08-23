@@ -55,6 +55,21 @@ observed Profile Path. If Chrome does not honour the argument on the device,
 stop there; do not attempt profile, cookie, Sync, or default-browser changes as
 a workaround.
 
+## Manual existing-tab shortcut check
+
+1. In the target Chrome profile, manually open one harmless tab whose URL has a
+   unique prefix. Enter that prefix only in the target's local configuration,
+   then assign a `⌘⌥1` through `⌘⌥9` shortcut.
+2. With Browser Profile Router in front, press the assigned shortcut. If macOS
+   asks, decide whether to allow BrowserProfileRouter to control Google Chrome.
+3. Confirm the matching tab and its window become active and Chrome's tab count
+   does not increase.
+4. Repeat after closing the matching tab, then with two matching tabs. Confirm
+   Chrome remains unchanged and the app reports an error in both cases.
+5. If Automation permission is denied, confirm Chrome remains unchanged and
+   the app reports the permission-related error. Do not grant Accessibility
+   permission or use GUI automation as a workaround.
+
 ## Optional default-browser check
 
 This check changes a system-wide preference and must be performed manually.
@@ -78,10 +93,11 @@ This check changes a system-wide preference and must be performed manually.
    target opens. For a rule with `pathPrefix`, confirm that a longer matching
    path overrides the host-only fallback and that a partial segment does not
    match.
-5. Select a profile in Browser Profile Router, then click an unmatched URL.
-   Confirm it launches with that selected profile without an alert. Back in
-   the app, confirm **Add Rule for This URL** offers to save a host-only rule
-   and does not save anything until you confirm it.
+5. Click an unmatched URL. Confirm it stays in Browser Profile Router without
+   opening a browser, then use the focused profile list's ↑/↓ keys and Return
+   to select where to open it. Back in the app, confirm **Add Rule for This
+   URL** offers to save a host-only rule and does not save anything until you
+   confirm it.
 
 Return to the previous default browser in System Settings if the result is not
 what you expected.

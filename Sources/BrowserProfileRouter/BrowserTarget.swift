@@ -10,12 +10,23 @@ struct BrowserTarget: Codable, Equatable, Identifiable {
     var name: String
     var applicationName: String
     var kind: Kind
+    var shortcutNumber: Int?
+    var existingTabURLPrefix: String?
 
-    init(id: UUID = UUID(), name: String, applicationName: String, kind: Kind) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        applicationName: String,
+        kind: Kind,
+        shortcutNumber: Int? = nil,
+        existingTabURLPrefix: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.applicationName = applicationName
         self.kind = kind
+        self.shortcutNumber = shortcutNumber
+        self.existingTabURLPrefix = existingTabURLPrefix
     }
 }
 
@@ -33,6 +44,7 @@ enum TargetDraftError: Error {
     case emptyName
     case emptyApplicationName
     case emptyProfileDirectory
+    case invalidExistingTabURLPrefix
 }
 
 struct TargetDraft {
@@ -40,17 +52,23 @@ struct TargetDraft {
     var applicationName: String = ""
     var usesChromeProfile: Bool = false
     var profileDirectory: String = ""
+    var shortcutNumber: Int?
+    var existingTabURLPrefix: String = ""
 
     init(
         name: String = "",
         applicationName: String = "",
         usesChromeProfile: Bool = false,
-        profileDirectory: String = ""
+        profileDirectory: String = "",
+        shortcutNumber: Int? = nil,
+        existingTabURLPrefix: String = ""
     ) {
         self.name = name
         self.applicationName = applicationName
         self.usesChromeProfile = usesChromeProfile
         self.profileDirectory = profileDirectory
+        self.shortcutNumber = shortcutNumber
+        self.existingTabURLPrefix = existingTabURLPrefix
     }
 
     init(target: BrowserTarget) {
@@ -64,6 +82,8 @@ struct TargetDraft {
             usesChromeProfile = true
             profileDirectory = directory
         }
+        shortcutNumber = target.shortcutNumber
+        existingTabURLPrefix = target.existingTabURLPrefix ?? ""
     }
 
     var isValid: Bool {
@@ -86,14 +106,29 @@ struct TargetDraft {
         if usesChromeProfile {
             let trimmedProfileDirectory = profileDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedProfileDirectory.isEmpty else { throw TargetDraftError.emptyProfileDirectory }
+            let existingTabURLPrefix = try normalizedExistingTabURLPrefix()
             return BrowserTarget(
                 id: id,
                 name: trimmedName,
                 applicationName: trimmedApplicationName,
-                kind: .chrome(profileDirectory: trimmedProfileDirectory)
+                kind: .chrome(profileDirectory: trimmedProfileDirectory),
+                shortcutNumber: shortcutNumber,
+                existingTabURLPrefix: existingTabURLPrefix
             )
         }
-        return BrowserTarget(id: id, name: trimmedName, applicationName: trimmedApplicationName, kind: .generic)
+        return BrowserTarget(id: id, name: trimmedName, applicationName: trimmedApplicationName, kind: .generic, shortcutNumber: shortcutNumber)
+    }
+
+    private func normalizedExistingTabURLPrefix() throws -> String? {
+        let trimmedPrefix = existingTabURLPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrefix.isEmpty else { return nil }
+        guard let url = URL(string: trimmedPrefix),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https", "chrome-extension"].contains(scheme),
+              url.host != nil else {
+            throw TargetDraftError.invalidExistingTabURLPrefix
+        }
+        return trimmedPrefix
     }
 }
 

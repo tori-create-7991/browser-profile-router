@@ -65,6 +65,8 @@
   <array>
     <string>NSUserActivityTypeBrowsingWeb</string>
   </array>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>BrowserProfileRouter uses this permission only to focus a configured existing Google Chrome tab.</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
 </dict>
