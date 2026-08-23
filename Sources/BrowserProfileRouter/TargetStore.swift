@@ -3,6 +3,10 @@ import Yams
 
 enum TargetStoreError: Error, Equatable {
     case unsupportedConfigurationVersion(Int)
+    case invalidShortcutNumber(Int)
+    case duplicateShortcutNumber(Int)
+    case existingTabURLPrefixRequiresChrome
+    case invalidExistingTabURLPrefix
 }
 
 final class TargetStore {
@@ -69,6 +73,7 @@ final class TargetStore {
             guard configuration.version == 1 else {
                 throw TargetStoreError.unsupportedConfigurationVersion(configuration.version)
             }
+            try validate(configuration)
             return configuration
         }
         for legacyFileURL in legacyFileURLs where FileManager.default.fileExists(atPath: legacyFileURL.path) {
@@ -84,8 +89,34 @@ final class TargetStore {
     }
 
     private func write(_ configuration: Configuration) throws {
+        try validate(configuration)
         let contents = try YAMLEncoder().encode(configuration)
         try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    private func validate(_ configuration: Configuration) throws {
+        var assignedShortcuts = Set<Int>()
+        for target in configuration.targets.map(\.browserTarget) {
+            if let shortcut = target.shortcutNumber {
+                guard (1...9).contains(shortcut) else {
+                    throw TargetStoreError.invalidShortcutNumber(shortcut)
+                }
+                guard assignedShortcuts.insert(shortcut).inserted else {
+                    throw TargetStoreError.duplicateShortcutNumber(shortcut)
+                }
+            }
+
+            guard let urlPrefix = target.existingTabURLPrefix, !urlPrefix.isEmpty else { continue }
+            guard case .chrome = target.kind else {
+                throw TargetStoreError.existingTabURLPrefixRequiresChrome
+            }
+            guard let url = URL(string: urlPrefix),
+                  let scheme = url.scheme?.lowercased(),
+                  ["http", "https", "chrome-extension"].contains(scheme),
+                  url.host != nil else {
+                throw TargetStoreError.invalidExistingTabURLPrefix
+            }
+        }
     }
 
     private struct Configuration: Codable {

@@ -324,6 +324,20 @@ final class LaunchCommandBuilderTests: XCTestCase {
         XCTAssertEqual(try store.load(), [target])
     }
 
+    // Integration: A local configuration rejects duplicate profile shortcuts so one key maps to one target.
+    func testTargetStoreRejectsDuplicateShortcutNumbers() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try TargetStore(directory: directory)
+        let first = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"), shortcutNumber: 1)
+        let second = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic, shortcutNumber: 1)
+
+        XCTAssertThrowsError(try store.save([first, second])) { error in
+            XCTAssertEqual(error as? TargetStoreError, .duplicateShortcutNumber(1))
+        }
+    }
+
     // Unit: A Chrome target persists its local existing-tab URL prefix without publishing it.
     func testTargetStoreRoundTripsExistingTabURLPrefix() throws {
         let directory = FileManager.default.temporaryDirectory
