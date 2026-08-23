@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Run Swift tests
+        run: swift test
+      - name: Build the application bundle
+        run: zsh Scripts/build-app.sh
+      - name: Verify application metadata
+        run: zsh Tests/default-browser-metadata.sh
+      - name: Verify installer behavior
+        run: zsh Tests/install-app.sh
