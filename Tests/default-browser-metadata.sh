@@ -14,6 +14,6 @@ info_plist="$repo_dir/Resources/Info.plist"
 [[ "$(plutil -extract 'CFBundleDocumentTypes.1.CFBundleTypeName' raw -o - "$info_plist")" == "XHTML document" ]]
 [[ "$(plutil -extract 'CFBundleDocumentTypes.1.LSItemContentTypes.0' raw -o - "$info_plist")" == "public.xhtml" ]]
 [[ "$(plutil -extract 'NSUserActivityTypes.0' raw -o - "$info_plist")" == "NSUserActivityTypeBrowsingWeb" ]]
-rg -F '"$lsregister_path" -f "$destination_app"' "$repo_dir/Scripts/install-app.sh" >/dev/null
+grep -F '"$lsregister_path" -f "$destination_app"' "$repo_dir/Scripts/install-app.sh" >/dev/null
 
 print "default-browser metadata tests passed"
