@@ -3,6 +3,9 @@
 A small native macOS app for pasting an HTTP(S) URL and opening it in a
 manually configured browser target.
 
+For a guided walkthrough of the repository and its safety boundaries, see the
+[repository guide](docs/repository-guide.html).
+
 ## License and notices
 
 This project is licensed under the [MIT License](LICENSE). Third-party notices
@@ -113,8 +116,8 @@ This is opt-in: the app never changes the macOS default-browser setting itself.
    **Browser Profile Router**.
 
 When macOS sends an external HTTP(S) URL to the router, a matching YAML rule
-opens its configured target automatically. An unmatched URL opens with the
-currently selected profile, without a confirmation dialog. It remains in the
-text field so you can explicitly add a rule afterward. The setting is
-system-wide, so do not select the router until its YAML targets and rules have
-been reviewed.
+opens its configured target automatically. For an unmatched URL, the router
+keeps the URL in the text field and focuses the profile list. Select a profile
+with the Up/Down arrow keys and press Return to open it, or add a rule first.
+The setting is system-wide, so do not select the router until its YAML targets
+and rules have been reviewed.

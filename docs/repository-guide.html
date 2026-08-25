@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="browser-profile-router の設計と安全境界を説明するガイド">
+  <title>browser-profile-router | リポジトリガイド</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #5b6570;
+      --paper: #f7f2e8;
+      --panel: #fffdf8;
+      --line: #d6cdbd;
+      --navy: #123047;
+      --blue: #0a6c8e;
+      --coral: #c75042;
+      --soft-blue: #e0f0f3;
+      --soft-coral: #f9e6e1;
+      --shadow: 0 16px 40px rgba(35, 47, 54, .10);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% 4%, rgba(10, 108, 142, .13), transparent 20rem),
+        linear-gradient(115deg, transparent 0 79%, rgba(199, 80, 66, .05) 79% 80%, transparent 80%),
+        var(--paper);
+      font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+      font-size: 16px;
+      line-height: 1.75;
+    }
+
+    a { color: var(--blue); text-underline-offset: .2em; }
+    a:focus-visible { outline: 3px solid var(--coral); outline-offset: 3px; }
+
+    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+
+    header { padding: 72px 0 48px; }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 5px 12px;
+      border: 1px solid currentColor;
+      color: var(--blue);
+      font-family: "Noto Sans Mono", "SFMono-Regular", monospace;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 { color: var(--navy); line-height: 1.28; }
+    h1 {
+      max-width: 800px;
+      margin: 18px 0 16px;
+      font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+      font-size: clamp(2.3rem, 6vw, 4.8rem);
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    h2 { margin: 0 0 20px; font-size: clamp(1.45rem, 3vw, 2.1rem); }
+    h3 { margin: 0 0 8px; font-size: 1.1rem; }
+
+    .lead { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 32px;
+    }
+    nav a {
+      padding: 8px 13px;
+      border: 1px solid var(--line);
+      background: rgba(255, 253, 248, .65);
+      color: var(--navy);
+      font-size: .9rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    nav a:hover { border-color: var(--blue); background: var(--soft-blue); }
+
+    main { padding-bottom: 72px; }
+    section { margin-top: 48px; scroll-margin-top: 24px; }
+
+    .verdict {
+      padding: 28px;
+      border-left: 6px solid var(--coral);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .verdict p { margin: 0; }
+    .verdict strong { color: var(--navy); }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card {
+      min-height: 100%;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .card p { margin: 0; color: var(--muted); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .step { position: relative; padding: 24px 22px; }
+    .step + .step { border-left: 1px solid var(--line); }
+    .number { display: block; margin-bottom: 10px; color: var(--coral); font-family: "Noto Sans Mono", monospace; font-size: .84rem; font-weight: 800; }
+    .step p { margin: 0; color: var(--muted); font-size: .94rem; }
+
+    .boundary { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .yes, .no { padding: 24px; border: 1px solid var(--line); }
+    .yes { background: var(--soft-blue); }
+    .no { background: var(--soft-coral); }
+    .yes h3::before { content: "✓ "; color: var(--blue); }
+    .no h3::before { content: "× "; color: var(--coral); }
+    ul { padding-left: 1.25em; margin: 10px 0 0; }
+
+    .status-note { padding: 22px 24px; border: 1px dashed var(--blue); background: rgba(224, 240, 243, .55); }
+    .status-note p:last-child { margin-bottom: 0; }
+    code { padding: .12em .35em; background: #ebe5da; font-family: "Noto Sans Mono", "SFMono-Regular", monospace; font-size: .9em; }
+
+    .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .source { padding: 18px; border-top: 3px solid var(--navy); background: var(--panel); }
+    .source p { margin: 5px 0 0; color: var(--muted); font-size: .92rem; }
+
+    footer { padding: 28px 0 48px; color: var(--muted); font-size: .88rem; }
+
+    @media (max-width: 760px) {
+      header { padding-top: 48px; }
+      .grid, .flow, .boundary, .sources { grid-template-columns: 1fr; }
+      .step + .step { border-top: 1px solid var(--line); border-left: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <span class="eyebrow">Repository guide</span>
+    <h1>browser-profile-router<br>とは何か</h1>
+    <p class="lead">macOS で URL を、ユーザーが指定したブラウザまたは Chrome プロファイルへ明示的に開くためのルーターです。便利さよりも、既存のブラウザ利用環境を壊さないことを最初の設計条件にしています。</p>
+    <nav aria-label="ページ内ナビゲーション">
+      <a href="#purpose">目的</a>
+      <a href="#features">機能一覧</a>
+      <a href="#flow">動作の流れ</a>
+      <a href="#boundaries">安全境界</a>
+      <a href="#status">現在の状態</a>
+      <a href="#sources">根拠資料</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="purpose" aria-labelledby="purpose-title">
+      <h2 id="purpose-title">ひとことで言うと</h2>
+      <div class="verdict">
+        <p><strong>「この URL は、どの作業用プロファイルで開くか」を人が選べるようにする macOS アプリの設計です。</strong> Chrome には <code>--profile-directory</code> を明示して起動し、それ以外のブラウザは汎用的にアプリを指定して開く、という小さく安全な責務に絞っています。</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="layers-title">
+      <h2 id="layers-title">設計を支える 3 つの層</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>1. BrowserTarget</h3>
+          <p>表示名・対象アプリ・起動方法を持つ設定モデルです。通常起動と「Chrome + プロファイルディレクトリ」を分けて表現します。</p>
+        </article>
+        <article class="card">
+          <h3>2. LaunchCommandBuilder</h3>
+          <p>入力 URL と対象設定から、実行ファイルと引数を組み立てます。実行前に導出されたコマンドを確認できることが重要です。</p>
+        </article>
+        <article class="card">
+          <h3>3. SwiftUI / TargetStore</h3>
+          <p>対象の編集・選択・起動を扱う UI と、アプリ自身の設定だけを保存する領域です。Chrome の設定領域は書き換えません。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="features" aria-labelledby="features-title">
+      <h2 id="features-title">設計上の機能一覧</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>保存済みターゲットの選択</h3>
+          <p>仕事用・個人用など、名前を付けたブラウザ起動先を選びます。各ターゲットには対象アプリと起動方式を持たせます。</p>
+        </article>
+        <article class="card">
+          <h3>Chrome プロファイル指定</h3>
+          <p>Chrome を開く際、<code>--profile-directory</code> でプロファイルディレクトリを明示します。別プロファイルの Chrome が使用中でも検証可能な設計です。</p>
+        </article>
+        <article class="card">
+          <h3>汎用ブラウザ起動</h3>
+          <p>Chrome 以外は、選択したブラウザアプリへ URL を渡す汎用起動を行います。プロファイル機能があるとは扱いません。</p>
+        </article>
+        <article class="card">
+          <h3>URL・設定値の検証</h3>
+          <p>URL の形式とプロファイルディレクトリを起動前に検証し、不正な入力で意図しない起動が起きることを防ぎます。</p>
+        </article>
+        <article class="card">
+          <h3>起動コマンドのプレビュー</h3>
+          <p>実行前に、使う実行ファイルと引数を確認できます。どのプロファイルで何を開くかを追跡しやすくします。</p>
+        </article>
+        <article class="card">
+          <h3>アプリ専用設定の保存</h3>
+          <p>ターゲット設定はアプリの設定領域に保存します。Chrome のプロファイルデータ・Cookie・Sync 設定を変更しません。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow" aria-labelledby="flow-title">
+      <h2 id="flow-title">URL を開くまでの流れ</h2>
+      <div class="flow" role="list" aria-label="URL 起動フロー">
+        <article class="step" role="listitem">
+          <span class="number">01 / ENTER</span>
+          <h3>URL を入力</h3>
+          <p>ユーザーが URL を入力し、保存済みの対象を選びます。</p>
+        </article>
+        <article class="step" role="listitem">
+          <span class="number">02 / VALIDATE</span>
+          <h3>入力を検証</h3>
+          <p>不正な URL や空のプロファイルディレクトリを、起動前に拒否します。</p>
+        </article>
+        <article class="step" role="listitem">
+          <span class="number">03 / PREVIEW</span>
+          <h3>コマンドを確認</h3>
+          <p>どの実行ファイルと引数が使われるかを、実行可能な形で表示します。</p>
+        </article>
+        <article class="step" role="listitem">
+          <span class="number">04 / OPEN</span>
+          <h3>明示的に起動</h3>
+          <p>Chrome は選択プロファイル付きで、他ブラウザは汎用起動で URL を開きます。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="boundaries" aria-labelledby="boundaries-title">
+      <h2 id="boundaries-title">安全のために、すること／しないこと</h2>
+      <div class="boundary">
+        <article class="yes">
+          <h3>すること</h3>
+          <ul>
+            <li>名前付きの仕事用・個人用ターゲットを設定する</li>
+            <li>Chrome の <code>--profile-directory</code> を明示して URL を開く</li>
+            <li>アプリ専用の設定を <code>~/.config/browser-profile-router/config.yaml</code>（または <code>XDG_CONFIG_HOME</code>）に保存する</li>
+            <li>必要に応じて Chrome のメタデータを読み取り専用で参照する</li>
+          </ul>
+        </article>
+        <article class="no">
+          <h3>しないこと</h3>
+          <ul>
+            <li>アプリ自身の判断で macOS のデフォルトブラウザを変更する</li>
+            <li>Chrome のプロファイル、Cookie、Sync、Local State を編集する</li>
+            <li>明示的な YAML ルールなしに、URL の分類やターゲット選択を自動化する</li>
+            <li>Chrome 以外に、根拠のないプロファイル指定機能を追加する</li>
+          </ul>
+        </article>
+      </div>
+      <p>インストール時には LaunchServices へアプリを登録しますが、デフォルトブラウザへの設定はユーザーがシステム設定から明示的に行います。YAML ルールに一致する URL だけは、設定済みターゲットを自動選択します。</p>
+    </section>
+
+    <section id="status" aria-labelledby="status-title">
+      <h2 id="status-title">このチェックアウトの読み方</h2>
+      <div class="status-note">
+        <p><strong>追跡対象には README・設計書・ADR に加え、Swift の実装とテストが含まれます。</strong> 機能の根拠は <code>Sources/</code>、回帰確認の根拠は <code>Tests/</code>、意図と使い方は README・設計書・ADR です。</p>
+        <p>ローカルの作業計画や引継ぎメモは公開資料に含めません。公開状態の確認は、追跡済みのソース・テスト・ビルド結果を基準にしてください。</p>
+      </div>
+    </section>
+
+    <section id="sources" aria-labelledby="sources-title">
+      <h2 id="sources-title">まず読むべき資料</h2>
+      <div class="sources">
+        <article class="source">
+          <a href="../README.md">README.md</a>
+          <p>リポジトリの最短の説明。macOS で設定済みプロファイルにリンクを開く URL ルーターであることを示します。</p>
+        </article>
+        <article class="source">
+          <a href="design/chrome-profile-router-prototype.md">設計書: Chrome Profile Router Prototype</a>
+          <p>目的、対象外、3 層アーキテクチャ、リスクと成功条件をまとめた一次資料です。</p>
+        </article>
+        <article class="source">
+          <a href="adr/0001-use-explicit-chrome-profile-launch-arguments.md">ADR 0001</a>
+          <p>Chrome を明示的なプロファイル引数で起動する決定と、その結果を記録しています。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">browser-profile-router / repository guide — このページはリポジトリ内の README・設計書・ADR をもとに作成しています。</footer>
+</body>
+</html>
