@@ -14,7 +14,12 @@ final class TargetStore {
     private let legacyFileURLs: [URL]
 
     init(directory: URL, legacyFileURLs: [URL] = []) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         fileURL = directory.appendingPathComponent("config.yaml")
         self.legacyFileURLs = legacyFileURLs
     }
@@ -92,6 +97,7 @@ final class TargetStore {
         try validate(configuration)
         let contents = try YAMLEncoder().encode(configuration)
         try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
     }
 
     private func validate(_ configuration: Configuration) throws {

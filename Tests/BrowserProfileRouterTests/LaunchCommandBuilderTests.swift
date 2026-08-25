@@ -2,6 +2,42 @@ import XCTest
 @testable import BrowserProfileRouter
 
 final class LaunchCommandBuilderTests: XCTestCase {
+    // Unit: a failure to create the default configuration store is reported instead of crashing the app.
+    @MainActor
+    func testRouterViewModelReportsConfigurationInitializationFailure() {
+        let model = RouterViewModel(defaultStore: {
+            throw TargetStoreError.unsupportedConfigurationVersion(2)
+        })
+
+        XCTAssertTrue(model.targets.isEmpty)
+        XCTAssertTrue(model.rules.isEmpty)
+        XCTAssertNil(model.selectedTargetID)
+        XCTAssertFalse(model.isConfigurationAvailable)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
+    // Integration: an unsupported existing configuration is reported instead of appearing as an empty setup.
+    @MainActor
+    func testRouterViewModelReportsConfigurationLoadingFailure() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try TargetStore(directory: directory)
+        try "version: 2\ntargets: []\nrules: []\n".write(
+            to: directory.appendingPathComponent("config.yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let model = RouterViewModel(store: store)
+
+        XCTAssertTrue(model.targets.isEmpty)
+        XCTAssertTrue(model.rules.isEmpty)
+        XCTAssertNil(model.selectedTargetID)
+        XCTAssertFalse(model.isConfigurationAvailable)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
     // Unit: Chrome uses the selected profile directory instead of a last-used profile.
     func testChromeTargetBuildsCommandWithProfileDirectoryAndURL() throws {
         let target = BrowserTarget(
@@ -54,7 +90,16 @@ final class LaunchCommandBuilderTests: XCTestCase {
         try store.save(targets)
 
         XCTAssertEqual(try store.load(), targets)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("config.yaml").path))
+        let configURL = directory.appendingPathComponent("config.yaml")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configURL.path))
+        XCTAssertEqual(
+            (try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)?.intValue,
+            0o700
+        )
+        XCTAssertEqual(
+            (try FileManager.default.attributesOfItem(atPath: configURL.path)[.posixPermissions] as? NSNumber)?.intValue,
+            0o600
+        )
     }
 
     // Unit: Configuration form values become an explicit Chrome target only when complete.

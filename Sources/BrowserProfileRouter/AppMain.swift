@@ -44,13 +44,28 @@ final class RouterViewModel: ObservableObject {
     @Published var selectedTargetID: UUID?
     @Published var errorMessage: String?
 
-    private let store: TargetStore
+    private let store: TargetStore?
 
-    init() {
-        store = try! TargetStore.defaultStore()
-        targets = (try? store.load()) ?? []
-        rules = (try? store.loadRules()) ?? []
-        selectedTargetID = targets.first?.id
+    var isConfigurationAvailable: Bool {
+        store != nil
+    }
+
+    init(
+        store: TargetStore? = nil,
+        defaultStore: () throws -> TargetStore = { try TargetStore.defaultStore() }
+    ) {
+        do {
+            let resolvedStore = try store ?? defaultStore()
+            let loadedTargets = try resolvedStore.load()
+            let loadedRules = try resolvedStore.loadRules()
+            self.store = resolvedStore
+            targets = loadedTargets
+            rules = loadedRules
+            selectedTargetID = loadedTargets.first?.id
+        } catch {
+            self.store = nil
+            errorMessage = "Could not initialize configuration: \(error.localizedDescription) Check \(TargetStore.defaultDirectory().path) and restart the app."
+        }
     }
 
     var selectedTarget: BrowserTarget? {
@@ -169,6 +184,10 @@ final class RouterViewModel: ObservableObject {
     }
 
     private func persist() {
+        guard let store else {
+            errorMessage = "Could not save targets: configuration is unavailable."
+            return
+        }
         do {
             try store.save(targets: targets, rules: rules)
         } catch {
@@ -188,6 +207,10 @@ private struct RouterView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Browser Profile Router").font(.title2)
+            if !model.isConfigurationAvailable {
+                Text("Configuration is unavailable. Fix the configuration directory permissions, then restart the app.")
+                    .foregroundStyle(.red)
+            }
             ForEach(model.targets.filter { $0.shortcutNumber != nil }) { target in
                 Button("Open \(target.name)") {
                     model.performShortcut(for: target)
@@ -305,6 +328,7 @@ private struct RouterView: View {
         }
         .padding()
         .frame(minWidth: 560, minHeight: 420)
+        .disabled(!model.isConfigurationAvailable)
         .alert("Browser Profile Router", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
