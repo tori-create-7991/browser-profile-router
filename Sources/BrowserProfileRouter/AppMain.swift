@@ -78,18 +78,30 @@ final class RouterViewModel: ObservableObject {
         return ([command.executable] + command.arguments).map(shellQuoted).joined(separator: " ")
     }
 
-    func add(_ target: BrowserTarget) {
+    @discardableResult
+    func add(_ target: BrowserTarget) -> Bool {
+        guard !targets.contains(where: { $0.name == target.name }) else {
+            errorMessage = "A browser target named \(target.name) already exists."
+            return false
+        }
         targets.append(target)
         selectedTargetID = target.id
         persist()
+        return true
     }
 
-    func replace(_ target: BrowserTarget) {
-        guard let index = targets.firstIndex(where: { $0.id == target.id }) else { return }
+    @discardableResult
+    func replace(_ target: BrowserTarget) -> Bool {
+        guard let index = targets.firstIndex(where: { $0.id == target.id }) else { return false }
+        guard !targets.enumerated().contains(where: { $0.offset != index && $0.element.name == target.name }) else {
+            errorMessage = "A browser target named \(target.name) already exists."
+            return false
+        }
         let previousTarget = targets[index]
         targets[index] = target
         rules = RoutingRule.retargeting(rules, from: previousTarget.name, to: target.name)
         persist()
+        return true
     }
 
     func delete(at offsets: IndexSet) {
@@ -339,12 +351,15 @@ private struct RouterView: View {
         }
         .sheet(isPresented: $isPresentingEditor) {
             TargetEditor(target: editingTarget) { target in
+                let saved: Bool
                 if editingTarget == nil {
-                    model.add(target)
+                    saved = model.add(target)
                 } else {
-                    model.replace(target)
+                    saved = model.replace(target)
                 }
-                isPresentingEditor = false
+                if saved {
+                    isPresentingEditor = false
+                }
             }
         }
         .sheet(isPresented: $isPresentingRuleEditor) {
