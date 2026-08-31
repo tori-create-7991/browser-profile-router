@@ -383,6 +383,104 @@ final class LaunchCommandBuilderTests: XCTestCase {
         }
     }
 
+    // Integration: Profile names are unique because routing rules resolve a target by name.
+    func testTargetStoreRejectsDuplicateTargetNames() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try TargetStore(directory: directory)
+        let first = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
+        let second = BrowserTarget(name: "Work", applicationName: "Safari", kind: .generic)
+
+        XCTAssertThrowsError(try store.save([first, second])) { error in
+            XCTAssertEqual(error as? TargetStoreError, .duplicateTargetName("Work"))
+        }
+    }
+
+    // Integration: Existing duplicate-name YAML is migrated without changing rules that previously resolved to the first target.
+    func testTargetStoreMigratesDuplicateTargetNamesFromExistingConfiguration() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let firstID = UUID()
+        let secondID = UUID()
+        try """
+        version: 1
+        targets:
+          - id: \(firstID.uuidString)
+            name: Work
+            application: Safari
+          - id: \(secondID.uuidString)
+            name: Work
+            application: Google Chrome
+            chromeProfile: Profile 2
+        rules:
+          - host: work.example.com
+            target: Work
+        """.write(to: directory.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let store = try TargetStore(directory: directory)
+
+        XCTAssertEqual(try store.load().map(\.name), ["Work", "Work (2)"])
+        XCTAssertEqual(try store.loadRules().first?.targetName, "Work")
+    }
+
+    // Integration: Legacy JSON with duplicate names keeps its first routing target and migrates later names.
+    func testTargetStoreMigratesDuplicateTargetNamesFromLegacyJSON() throws {
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: rootDirectory) }
+        let configurationDirectory = rootDirectory.appendingPathComponent("config", isDirectory: true)
+        let legacyURL = rootDirectory.appendingPathComponent("targets.json")
+        let targets = [
+            BrowserTarget(name: "Work", applicationName: "Safari", kind: .generic),
+            BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2")),
+        ]
+        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(targets).write(to: legacyURL)
+        let store = try TargetStore(directory: configurationDirectory, legacyFileURLs: [legacyURL])
+
+        XCTAssertEqual(try store.load().map(\.name), ["Work", "Work (2)"])
+    }
+
+    // Integration: A rejected UI add retains the existing target and selection.
+    @MainActor
+    func testRouterViewModelRejectsDuplicateTargetAddition() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = BrowserTarget(name: "Work", applicationName: "Safari", kind: .generic)
+        let store = try TargetStore(directory: directory)
+        try store.save([original])
+        let model = RouterViewModel(store: store)
+
+        XCTAssertFalse(model.add(BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))))
+        XCTAssertEqual(model.targets, [original])
+        XCTAssertEqual(model.selectedTargetID, original.id)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
+    // Integration: A rejected rename retains targets, rules, and selection.
+    @MainActor
+    func testRouterViewModelRejectsDuplicateTargetRename() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let work = BrowserTarget(name: "Work", applicationName: "Safari", kind: .generic)
+        let personal = BrowserTarget(name: "Personal", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
+        let rule = RoutingRule(host: "work.example.com", targetName: "Work")
+        let store = try TargetStore(directory: directory)
+        try store.save(targets: [work, personal], rules: [rule])
+        let model = RouterViewModel(store: store)
+        let renamedWork = BrowserTarget(id: work.id, name: "Personal", applicationName: work.applicationName, kind: work.kind)
+
+        XCTAssertFalse(model.replace(renamedWork))
+        XCTAssertEqual(model.targets, [work, personal])
+        XCTAssertEqual(model.rules, [rule])
+        XCTAssertEqual(model.selectedTargetID, work.id)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
     // Unit: A Chrome target persists its local existing-tab URL prefix without publishing it.
     func testTargetStoreRoundTripsExistingTabURLPrefix() throws {
         let directory = FileManager.default.temporaryDirectory

@@ -5,6 +5,7 @@ enum TargetStoreError: Error, Equatable {
     case unsupportedConfigurationVersion(Int)
     case invalidShortcutNumber(Int)
     case duplicateShortcutNumber(Int)
+    case duplicateTargetName(String)
     case existingTabURLPrefixRequiresChrome
     case invalidExistingTabURLPrefix
 }
@@ -74,11 +75,15 @@ final class TargetStore {
     private func loadConfiguration() throws -> Configuration {
         if FileManager.default.fileExists(atPath: fileURL.path) {
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            let configuration = try YAMLDecoder().decode(Configuration.self, from: contents)
-            guard configuration.version == 1 else {
-                throw TargetStoreError.unsupportedConfigurationVersion(configuration.version)
+            let decodedConfiguration = try YAMLDecoder().decode(Configuration.self, from: contents)
+            guard decodedConfiguration.version == 1 else {
+                throw TargetStoreError.unsupportedConfigurationVersion(decodedConfiguration.version)
             }
+            let (configuration, migratedDuplicateNames) = migratingDuplicateTargetNames(in: decodedConfiguration)
             try validate(configuration)
+            if migratedDuplicateNames {
+                try write(configuration)
+            }
             return configuration
         }
         for legacyFileURL in legacyFileURLs where FileManager.default.fileExists(atPath: legacyFileURL.path) {
@@ -86,7 +91,11 @@ final class TargetStore {
                   let targets = try? JSONDecoder().decode([BrowserTarget].self, from: data) else {
                 continue
             }
-            let configuration = Configuration(version: 1, targets: targets.map(Configuration.Target.init), rules: [])
+            let (configuration, _) = migratingDuplicateTargetNames(in: Configuration(
+                version: 1,
+                targets: targets.map(Configuration.Target.init),
+                rules: []
+            ))
             try write(configuration)
             return configuration
         }
@@ -101,8 +110,12 @@ final class TargetStore {
     }
 
     private func validate(_ configuration: Configuration) throws {
+        var targetNames = Set<String>()
         var assignedShortcuts = Set<Int>()
         for target in configuration.targets.map(\.browserTarget) {
+            guard targetNames.insert(target.name).inserted else {
+                throw TargetStoreError.duplicateTargetName(target.name)
+            }
             if let shortcut = target.shortcutNumber {
                 guard (1...9).contains(shortcut) else {
                     throw TargetStoreError.invalidShortcutNumber(shortcut)
@@ -123,6 +136,39 @@ final class TargetStore {
                 throw TargetStoreError.invalidExistingTabURLPrefix
             }
         }
+    }
+
+    private func migratingDuplicateTargetNames(in configuration: Configuration) -> (Configuration, Bool) {
+        let existingNames = Set(configuration.targets.map(\.name))
+        var usedNames = Set<String>()
+        var occurrences = [String: Int]()
+        var migrated = false
+        let targets = configuration.targets.map { target -> Configuration.Target in
+            let occurrence = (occurrences[target.name] ?? 0) + 1
+            occurrences[target.name] = occurrence
+            guard occurrence > 1 else {
+                usedNames.insert(target.name)
+                return target
+            }
+
+            var suffix = occurrence
+            var migratedName = "\(target.name) (\(suffix))"
+            while existingNames.contains(migratedName) || usedNames.contains(migratedName) {
+                suffix += 1
+                migratedName = "\(target.name) (\(suffix))"
+            }
+            usedNames.insert(migratedName)
+            migrated = true
+            return Configuration.Target(BrowserTarget(
+                id: target.id,
+                name: migratedName,
+                applicationName: target.application,
+                kind: target.chromeProfile.map { .chrome(profileDirectory: $0) } ?? .generic,
+                shortcutNumber: target.shortcut,
+                existingTabURLPrefix: target.existingTabURLPrefix
+            ))
+        }
+        return (Configuration(version: configuration.version, targets: targets, rules: configuration.rules), migrated)
     }
 
     private struct Configuration: Codable {
