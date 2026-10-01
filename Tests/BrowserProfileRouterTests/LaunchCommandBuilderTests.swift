@@ -326,6 +326,23 @@ final class LaunchCommandBuilderTests: XCTestCase {
         )
     }
 
+    // Unit: An unmatched incoming URL gets a usable initial profile selection.
+    @MainActor
+    func testUnmatchedIncomingURLSelectsFirstTargetEvenWhenAnotherTargetWasSelected() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
+        let second = BrowserTarget(name: "Work", applicationName: "Google Chrome", kind: .chrome(profileDirectory: "Profile 2"))
+        let store = try TargetStore(directory: directory)
+        try store.save([first, second])
+        let model = RouterViewModel(store: store)
+        model.selectedTargetID = second.id
+
+        XCTAssertTrue(model.openIncomingURL(URL(string: "https://unmatched.example.com/")!))
+        XCTAssertEqual(model.selectedTargetID, first.id)
+    }
+
     // Unit: Keyboard profile navigation follows the displayed order and stays at each boundary.
     func testProfileSelectionMovesInDisplayedOrderAndClampsAtBoundaries() {
         let personal = BrowserTarget(name: "Personal", applicationName: "Safari", kind: .generic)
@@ -497,29 +514,6 @@ final class LaunchCommandBuilderTests: XCTestCase {
         try store.save([target])
 
         XCTAssertEqual(try store.load(), [target])
-    }
-
-    // Unit: Only the controller's bounded success and safe no-op outcomes are accepted.
-    func testChromeTabFocusResultParsesBoundedAppleScriptOutcomes() {
-        XCTAssertEqual(ChromeTabFocusResult.parse("focused\n"), .focused)
-        XCTAssertEqual(ChromeTabFocusResult.parse("notFound\n"), .notFound)
-        XCTAssertEqual(ChromeTabFocusResult.parse("ambiguous\n"), .ambiguous)
-        XCTAssertEqual(ChromeTabFocusResult.parse("unexpected\n"), .automationFailed)
-    }
-
-    // Unit: A shortcut uses an existing Chrome tab only when the target has a local prefix.
-    func testShortcutActionFocusesExistingTabForChromeTargetWithPrefix() {
-        let target = BrowserTarget(
-            name: "Work",
-            applicationName: "Google Chrome",
-            kind: .chrome(profileDirectory: "Profile 2"),
-            existingTabURLPrefix: "chrome-extension://example-id/"
-        )
-
-        XCTAssertEqual(
-            ShortcutAction.forTarget(target),
-            .focusExistingTab(urlPrefix: "chrome-extension://example-id/")
-        )
     }
 
     // Unit: Existing-tab focus accepts only URL prefixes Chrome can expose safely.

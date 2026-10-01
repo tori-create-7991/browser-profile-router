@@ -72,17 +72,11 @@ segments only: `/maps` matches `/maps` and `/maps/place`, but not
 `/mapsfordays`. When several rules match, the longest `pathPrefix` wins; YAML
 order resolves equal-length ties. A host-only rule is therefore a fallback.
 
-## Existing tab shortcuts
+## Profile shortcuts
 
-For a Chrome target, set an optional **Existing tab URL prefix** in the target
-editor. When that target also has a `⌘⌥1` through `⌘⌥9` shortcut, the shortcut
-focuses the one already-open Chrome tab whose URL begins with that local value.
-It never creates a tab. No matching tab, or more than one matching tab, leaves
-Chrome unchanged and shows an error. macOS may ask you to allow
-BrowserProfileRouter to control Google Chrome on first use.
-
-Existing-tab URL prefixes are personal local configuration. Do not add them to
-public YAML examples, documentation, issues, or repositories.
+`⌘⌥1` through `⌘⌥9` open the current URL in the assigned target. Existing-tab
+focus shortcuts are temporarily disabled; any old `existingTabURLPrefix` values
+in local configuration are ignored.
 
 ## Verification
 
@@ -117,7 +111,8 @@ This is opt-in: the app never changes the macOS default-browser setting itself.
 
 When macOS sends an external HTTP(S) URL to the router, a matching YAML rule
 opens its configured target automatically. For an unmatched URL, the router
-keeps the URL in the text field and focuses the profile list. Select a profile
-with the Up/Down arrow keys and press Return to open it, or add a rule first.
+keeps the URL in the text field, selects the first profile, and focuses the
+profile list so Return can open it immediately or the Up/Down arrow keys can
+choose another profile. The router closes after the launch request starts.
 The setting is system-wide, so do not select the router until its YAML targets
 and rules have been reviewed.

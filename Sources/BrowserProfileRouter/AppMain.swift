@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum ProfileSelection {
@@ -144,6 +145,7 @@ final class RouterViewModel: ObservableObject {
             process.executableURL = URL(fileURLWithPath: command.executable)
             process.arguments = command.arguments
             try process.run()
+            NSApplication.shared.terminate(nil)
         } catch {
             errorMessage = "The URL or target configuration is invalid: \(error.localizedDescription)"
         }
@@ -159,21 +161,7 @@ final class RouterViewModel: ObservableObject {
 
     func performShortcut(for target: BrowserTarget) {
         selectedTargetID = target.id
-        switch ShortcutAction.forTarget(target) {
-        case .openCurrentURL:
-            launch()
-        case .focusExistingTab(let urlPrefix):
-            switch ChromeTabController().focusTab(urlPrefix: urlPrefix) {
-            case .focused:
-                break
-            case .notFound:
-                errorMessage = "No open Chrome tab matches this profile's existing-tab URL."
-            case .ambiguous:
-                errorMessage = "More than one open Chrome tab matches this profile's existing-tab URL."
-            case .automationFailed:
-                errorMessage = "Could not focus the Chrome tab. Allow BrowserProfileRouter to control Google Chrome if macOS asks."
-            }
-        }
+        launch()
     }
 
     func applyMatchingRule() {
@@ -190,7 +178,10 @@ final class RouterViewModel: ObservableObject {
     func openIncomingURL(_ url: URL) -> Bool {
         urlText = url.absoluteString
         applyMatchingRule()
-        guard matchedRule != nil else { return true }
+        guard matchedRule != nil else {
+            selectedTargetID = targets.first?.id
+            return true
+        }
         launch()
         return false
     }
@@ -380,7 +371,9 @@ private struct RouterView: View {
         }
         .onOpenURL { url in
             if model.openIncomingURL(url) {
-                isProfileListFocused = true
+                DispatchQueue.main.async {
+                    isProfileListFocused = true
+                }
             }
         }
     }
@@ -475,9 +468,6 @@ private struct TargetEditor: View {
                         }
                     }
                 }
-                TextField("Existing tab URL prefix (optional)", text: $draft.existingTabURLPrefix)
-                Text("With a shortcut, this focuses exactly one matching open Chrome tab without creating a tab.")
-                    .foregroundStyle(.secondary)
             }
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
