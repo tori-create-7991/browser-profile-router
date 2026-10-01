@@ -32,7 +32,9 @@ writes.
 3. Paste an HTTP(S) URL and select `Personal`.
 4. Confirm the launch preview is `/usr/bin/open -a Safari <url>` before
    pressing **Open URL**.
-5. Confirm the URL opens in Safari.
+5. Confirm the URL opens in Safari and Browser Profile Router closes after the
+   launch request starts. The app treats `Process.run()` succeeding as launch
+   success; it does not wait for Safari to finish opening the URL.
 
 ## Manual Chrome-already-running check
 
@@ -55,20 +57,10 @@ observed Profile Path. If Chrome does not honour the argument on the device,
 stop there; do not attempt profile, cookie, Sync, or default-browser changes as
 a workaround.
 
-## Manual existing-tab shortcut check
-
-1. In the target Chrome profile, manually open one harmless tab whose URL has a
-   unique prefix. Enter that prefix only in the target's local configuration,
-   then assign a `⌘⌥1` through `⌘⌥9` shortcut.
-2. With Browser Profile Router in front, press the assigned shortcut. If macOS
-   asks, decide whether to allow BrowserProfileRouter to control Google Chrome.
-3. Confirm the matching tab and its window become active and Chrome's tab count
-   does not increase.
-4. Repeat after closing the matching tab, then with two matching tabs. Confirm
-   Chrome remains unchanged and the app reports an error in both cases.
-5. If Automation permission is denied, confirm Chrome remains unchanged and
-   the app reports the permission-related error. Do not grant Accessibility
-   permission or use GUI automation as a workaround.
+Existing-tab focus shortcuts are temporarily disabled. Profile shortcuts open
+the current URL in the assigned target; no Chrome Automation permission is
+needed. The app closes once its launch request starts. This confirms that the
+launcher process started, not that the browser finished loading the URL.
 
 ## Optional default-browser check
 
@@ -94,8 +86,9 @@ This check changes a system-wide preference and must be performed manually.
    path overrides the host-only fallback and that a partial segment does not
    match.
 5. Click an unmatched URL. Confirm it stays in Browser Profile Router without
-   opening a browser, then use the focused profile list's ↑/↓ keys and Return
-   to select where to open it. Back in the app, confirm **Add Rule for This
+   opening a browser, the first profile is selected and the profile list has
+   keyboard focus. Press Return immediately, without clicking the list, and
+   confirm the URL opens and the router closes. Back in the app, confirm **Add Rule for This
    URL** offers to save a host-only rule and does not save anything until you
    confirm it.
 
